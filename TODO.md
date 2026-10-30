@@ -99,3 +99,13 @@ A portabilidade é entre alvos Zephyr com driver UART interrupt-driven compatív
 não entre sistemas operacionais. O build QEMU não valida driver/rádio físico.
 Medição de consumo continua adiada; testes de falhas físicos continuam abertos.
 Relatório no consumidor: docs/MESHTASTIC_CLIENT_INDEPENDENTE.md.
+
+
+## Regressão física sem terminal — 30/10/2026
+
+- [x] Consumidor fechou ambos os monitores por pelo menos 607 s com USB/alimentação
+  mantidas. Uptime/sequências avançaram; deltas de erros UART/TX/cliente zerados;
+  três TX/RX/ACK após reabertura e refresh confirmados. Logs nativos descartaram
+  803/826 mensagens sem consumidor, portanto não há histórico textual completo.
+  Não é ensaio sem alimentação USB, silêncio do rádio ou medição de energia.
+  Evidência no consumidor: docs/mesh-physical-2026-10-30/RESULTADO.md.
