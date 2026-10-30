@@ -65,8 +65,10 @@ Ver README e docs/TX_IRQ.md da aplicação para semântica e limitações.
 
 ## Validação física pendente
 
-- [ ] Reinício real de rádio enquanto existe envio/ACK em voo; preservar
-  distinção entre perda de sessão, refresh e ausência transitória de resposta.
+- [x] Reset real do rádio com ACK pendente: sessão perdida explicitamente,
+  entrega desconhecida e recuperação automática em aproximadamente 7,46 s;
+  três TX/RX/ACK posteriores e refresh confirmados em 30/10/2026. Não prova
+  bytes UART em trânsito. Evidência no relatório físico do consumidor.
 - [ ] Silêncio UART, desligamento/religamento e buffer sob rajada no hardware.
 - [ ] Ensaio prolongado/múltiplos nós no consumidor (incluindo SENS02 quando
   disponível); não é dependência de implementação ou teste deste módulo.
