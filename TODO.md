@@ -109,3 +109,8 @@ Relatório no consumidor: docs/MESHTASTIC_CLIENT_INDEPENDENTE.md.
   803/826 mensagens sem consumidor, portanto não há histórico textual completo.
   Não é ensaio sem alimentação USB, silêncio do rádio ou medição de energia.
   Evidência no consumidor: docs/mesh-physical-2026-10-30/RESULTADO.md.
+
+
+Decisão do consumidor em 30/10/2026: ensaio físico de silêncio prolongado
+adiado pelo usuário; retomar se houver problemas em campo. Permanece pendente,
+sem exigir reset mantido ou nova montagem nesta etapa.
