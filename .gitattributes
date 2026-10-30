@@ -1,0 +1,4 @@
+# Preserve vendored bytes, including upstream license/formatting whitespace.
+generated/** -whitespace
+reference/** -whitespace
+nanopb/** -whitespace

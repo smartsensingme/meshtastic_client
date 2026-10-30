@@ -1,0 +1,6 @@
+name: meshtastic_client
+build:
+  cmake: .
+  kconfig: Kconfig
+  depends:
+    - rt_log

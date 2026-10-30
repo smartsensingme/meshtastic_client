@@ -1,0 +1,11 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Build-only portability target: console uses UART0, client exclusively UART1. */
+/ {
+    aliases {
+        meshtastic-uart = &uart1;
+    };
+};
+&uart1 {
+    status = "okay";
+    current-speed = <115200>;
+};

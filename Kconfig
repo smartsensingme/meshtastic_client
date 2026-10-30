@@ -1,0 +1,109 @@
+config MESHTASTIC_CLIENT
+    bool "Meshtastic serial Protobuf client"
+    default y
+    depends on SERIAL && UART_INTERRUPT_DRIVEN
+    help
+      Cliente singleton serial Protobuf, sem pinagem ou provisionamento. Requer
+      UART interrupt-driven exclusiva e rt_log disponível; inclui runtime nanopb.
+      Usa ring RX fixo de 4096 bytes, cache/staging e fila TX limitada.
+
+config MESHTASTIC_NODE_CACHE_SIZE
+    int "Maximum nodes in diagnostic snapshot"
+    default 32
+    range 1 128
+    depends on MESHTASTIC_CLIENT
+    help
+      Capacidade fixa de nós por snapshot, replicada em staging e cópias.
+      Aumentar custa RAM; cache cheio rejeita novos nós, sem expulsão.
+      O cache é uma observação parcial, nunca inventário completo da rede.
+
+if MESHTASTIC_CLIENT
+
+config MESHTASTIC_TX_QUEUE_DEPTH
+    int "Outstanding UART TX frames (including unreaped completions)"
+    range 2 16
+    default 4
+    help
+      Fixed slots, each holding a full 512-byte Protobuf plus framing and metadata.
+      At least two slots admit recovery padding and configuration atomically.
+      Full queue returns -EAGAIN; producer never waits for transmission/space.
+
+config MESHTASTIC_TX_TIMEOUT_MS
+    int "Maximum TX interval without FIFO progress, in ms"
+    range 100 60000
+    default 2000
+    help
+      Owner waits on this deadline, not a polling timer. Must exceed transmission
+      time of a driver chunk plus scheduling latency at the configured baud.
+      A fault aborts queued frames and recovers at bounded backoff frequency.
+
+config MESHTASTIC_PACKET_TRACE
+    bool "Trace individual mesh packets"
+    default n
+    help
+      Logs DBG por pacote, sujeitos aos limites de rt_log. Desligar reduz
+      formatação/saída. Não altera protocolo nem consultas ao rádio.
+
+config MESHTASTIC_REFRESH_INTERVAL_MS
+    int "Full radio snapshot interval in ms (0 disables periodic refresh)"
+    range 0 3600000
+    default 0
+    help
+      Intervalo de snapshot completo em ms; zero desliga refresh periódico.
+      Usa deadlines na thread dona, sem timer/thread adicional. Refresh
+      gera tráfego UART; manter zero em operação quando cache bastar.
+
+config MESHTASTIC_HEARTBEAT_INTERVAL_MS
+    int "UART API keepalive interval in ms"
+    range 10000 300000
+    default 60000
+    help
+      Intervalo de keepalive UART neutro em ms quando sincronizado e sem
+      refresh. Não transmite payload LoRa. Deve ser menor que liveness;
+      reduzir aumenta tráfego e tempo ativo de UART/ESP32.
+
+config MESHTASTIC_LIVENESS_TIMEOUT_MS
+    int "Maximum UART silence before declaring disconnection"
+    range 30000 900000
+    default 180000
+    help
+      Silêncio em ms desde Protobuf válido até invalidar sessão e recuperar.
+      Deve exceder heartbeat. Muito curto provoca reconexões desnecessárias;
+      muito longo atrasa detecção de rádio ausente.
+
+config MESHTASTIC_SYNC_TIMEOUT_MS
+    int "Initial configuration timeout/retry interval"
+    range 1000 60000
+    default 20000
+    help
+      Prazo inicial de resposta e recuperação em ms, também usado quando
+      uma admissão foi recusada. Sem espera ocupada; backoff dobra até
+      RETRY_MAX. Deve caber dentro do máximo de backoff.
+
+config MESHTASTIC_RETRY_MAX_MS
+    int "Maximum configuration retry interval"
+    range 60000 900000
+    default 300000
+    help
+      Teto do backoff em ms. Recuperação pode continuar indefinidamente
+      nesta frequência limitada; não retransmite payload de aplicação.
+      Limita manutenção sem impedir recuperação após rádio ausente.
+
+config MESHTASTIC_WANT_ACK
+    bool "Request radio delivery ACK"
+    default y
+    help
+      Bit want_ack de cada pacote enviado. ACK/retransmissões pertencem
+      ao rádio e custam airtime/energia; habilitar quando entrega exigir.
+      O cliente apenas publica Routing; acompanhamento é da aplicação.
+
+config MESHTASTIC_HOP_LIMIT
+    int "Outgoing application packet hop limit"
+    range 0 7
+    default 1
+    help
+      Hop limit dos pacotes de aplicação enviados, 0..7. Mais saltos podem
+      ampliar alcance e tráfego/energia da rede. Não muda configuração
+      persistente do rádio nem interpreta entrega remota.
+
+endif
