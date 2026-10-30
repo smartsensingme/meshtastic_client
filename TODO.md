@@ -40,7 +40,10 @@ Não considerar checkboxes antigos como prova de ausência de implementação.
   desde o código, sem aguardar instrumentos ou inventar economia quantitativa.
 - [x] Enlace nominal da implementação IRQ observado no ensaio irq-tx de
   29/10/2026, conforme TODO do consumidor; não cobre cenários físicos extremos.
-- [ ] Validar nas placas a revisão de contratos/extração de 30/10/2026.
+- [x] Validar operação nominal da revisão de contratos/extração: baseline de
+  aproximadamente 5min30s, 11 TX/RX/ACK correlacionados, seis sincronizações por
+  placa e nenhum erro observado. Falhas físicas abaixo continuam pendentes.
+  Evidência no consumidor: docs/mesh-physical-2026-10-30/RESULTADO.md.
 
 Implementado em 29/10/2026: fila IRQ com quatro slots por padrão, resultados
 retidos até poll, eventos MC_TX_DRAINED e timeout orientado ao próximo prazo.
