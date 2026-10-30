@@ -114,3 +114,12 @@ Relatório no consumidor: docs/MESHTASTIC_CLIENT_INDEPENDENTE.md.
 Decisão do consumidor em 30/10/2026: ensaio físico de silêncio prolongado
 adiado pelo usuário; retomar se houver problemas em campo. Permanece pendente,
 sem exigir reset mantido ou nova montagem nesta etapa.
+
+
+## Reboot do host nRF com rádio mantido alimentado — 30/10/2026
+
+- [x] Reset físico somente do host pelo usuário; USB reenumerou sem reconexão
+  manual. Cliente sincronizou em 2,42 s de uptime, confirmou três TX/RX/ACK e
+  refresh em 63,04 s, sem erro observado. Receptor manteve uptime e reconheceu
+  a sequência reiniciada. Não cobre todos os estados/frames UART em trânsito.
+  Evidência no consumidor: docs/mesh-physical-2026-10-30/RESULTADO.md.
