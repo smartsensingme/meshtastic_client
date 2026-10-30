@@ -123,3 +123,11 @@ sem exigir reset mantido ou nova montagem nesta etapa.
   refresh em 63,04 s, sem erro observado. Receptor manteve uptime e reconheceu
   a sequência reiniciada. Não cobre todos os estados/frames UART em trânsito.
   Evidência no consumidor: docs/mesh-physical-2026-10-30/RESULTADO.md.
+
+
+## Reboot do host concentrador — 30/10/2026
+
+- [x] Reset físico da nRF CONC com rádio mantido alimentado; sync em 2,32 s,
+  três RX correlacionados com TX/ACK do sensor e refresh em 62,68 s. Sensor
+  manteve uptime/sequência; nenhum erro observado nesta fase. Não cobre todos
+  os estados de tráfego em voo. Evidência no relatório físico do consumidor.
