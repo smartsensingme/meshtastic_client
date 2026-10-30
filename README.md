@@ -3,8 +3,11 @@
 Módulo Zephyr reutilizável em shared/modules/meshtastic_client, com Git local
 sem remoto. O consumidor usa link de integração e modules.lock.json. Não depende
 de aplicações de telemetria. API em
-`include/meshtastic_client/client.h` e `include/meshtastic_client/snapshot.h`. Não contém nomes de nós, JSON, PSKs ou
-pinagem de placas. Recebe um dispositivo UART configurado pela aplicação.
+`include/meshtastic_client/client.h` e `include/meshtastic_client/snapshot.h`.
+Não embute identidades de nós, JSON de aplicação ou pinagem de placas. Recebe
+um dispositivo UART configurado pela aplicação. Snapshots/logs não exportam
+PSKs; o Protobuf de entrada pode transitoriamente conter chaves enviadas pelo
+rádio, portanto não publicar buffers brutos ou dumps de memória.
 
 Chamar mc_init, mc_poll, mc_wait e mc_send de uma única thread. Callbacks são
 síncronos e seus dados só valem durante a chamada. RX usa interrupções e ring
@@ -366,7 +369,6 @@ Kconfig de políticas foram preservados nas aplicações. Ver [NOTICE.md](NOTICE
 e [PROVENANCE.json](PROVENANCE.json): não atribuir Apache-2.0 ao pacote vendorizado
 inteiro só porque os nossos fontes têm esse identificador.
 
-
 ## Portabilidade de microcontrolador
 
 Nenhum fonte do cliente chama nrfx, HAL Nordic, GPIO nRF, USB ou bootloader.
@@ -400,3 +402,9 @@ Ensaios físicos remanescentes foram deixados pendentes por decisão do usuário
 A extração/documentação não depende deles e não transforma cobertura parcial em
 validação de todos os cenários. O agendamento de janelas fica em outro módulo;
 esta revisão não acrescenta políticas de sono ou comandos administrativos ao cliente.
+
+Valores de configuração/enum nos snapshots são observações brutas do firmware
+fixado, sem normalização ou validação de toda a faixa enum. Valores desconhecidos
+podem aparecer ao conectar outra versão; flags *_received indicam presença da
+seção, não aprovação de sua configuração. Consulte os schemas fixados antes de
+interpretar enums. Não usar nomes ou canal anunciado como autenticação.

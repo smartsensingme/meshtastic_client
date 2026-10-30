@@ -100,7 +100,6 @@ não entre sistemas operacionais. O build QEMU não valida driver/rádio físico
 Medição de consumo continua adiada; testes de falhas físicos continuam abertos.
 Relatório no consumidor: docs/MESHTASTIC_CLIENT_INDEPENDENTE.md.
 
-
 ## Regressão física sem terminal — 30/10/2026
 
 - [x] Consumidor fechou ambos os monitores por pelo menos 607 s com USB/alimentação
@@ -110,11 +109,9 @@ Relatório no consumidor: docs/MESHTASTIC_CLIENT_INDEPENDENTE.md.
   Não é ensaio sem alimentação USB, silêncio do rádio ou medição de energia.
   Evidência no consumidor: docs/mesh-physical-2026-10-30/RESULTADO.md.
 
-
 Decisão do consumidor em 30/10/2026: ensaio físico de silêncio prolongado
 adiado pelo usuário; retomar se houver problemas em campo. Permanece pendente,
 sem exigir reset mantido ou nova montagem nesta etapa.
-
 
 ## Reboot do host nRF com rádio mantido alimentado — 30/10/2026
 
@@ -124,14 +121,12 @@ sem exigir reset mantido ou nova montagem nesta etapa.
   a sequência reiniciada. Não cobre todos os estados/frames UART em trânsito.
   Evidência no consumidor: docs/mesh-physical-2026-10-30/RESULTADO.md.
 
-
 ## Reboot do host concentrador — 30/10/2026
 
 - [x] Reset físico da nRF CONC com rádio mantido alimentado; sync em 2,32 s,
   três RX correlacionados com TX/ACK do sensor e refresh em 62,68 s. Sensor
   manteve uptime/sequência; nenhum erro observado nesta fase. Não cobre todos
   os estados de tráfego em voo. Evidência no relatório físico do consumidor.
-
 
 ## Tentativa de reset isolado do rádio CONC — 30/10/2026
 
