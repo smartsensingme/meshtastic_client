@@ -131,3 +131,12 @@ sem exigir reset mantido ou nova montagem nesta etapa.
   três RX correlacionados com TX/ACK do sensor e refresh em 62,68 s. Sensor
   manteve uptime/sequência; nenhum erro observado nesta fase. Não cobre todos
   os estados de tráfego em voo. Evidência no relatório físico do consumidor.
+
+
+## Tentativa de reset isolado do rádio CONC — 30/10/2026
+
+- [ ] Cenário isolado continua pendente: tentativa reiniciou também o host CONC;
+  usuário relatou possível desligamento acidental. Não repetir manobra difícil
+  nesta etapa nem declarar ciclo elétrico específico validado. Recuperação após
+  evento observado foi confirmada (sync 2,33 s, três RX/TX/ACK e refresh), mas
+  não substitui o ensaio isolado. Evidência no relatório físico do consumidor.
