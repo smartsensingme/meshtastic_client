@@ -106,10 +106,19 @@ void uart_irq_rx_disable(const struct device *d)
 }
 
 static unsigned events;
+static unsigned pause_events, lost_events, received_events;
+static int pause_status;
 static void callback(const struct mc_event *e)
 {
-	(void)e;
 	++events;
+	if (e->type == MC_PAUSED) {
+		++pause_events;
+		pause_status = e->status;
+	}
+	if (e->type == MC_DISCONNECTED)
+		++lost_events;
+	if (e->type == MC_RECEIVED)
+		++received_events;
 }
 
 /** Fixture interna: entrega um FromRadio oficial ao callback IRQ e ao poll real. */
@@ -180,6 +189,8 @@ int main(void)
 	mc_poll();
 	assert(!mc_ready() && !mc_local_node());
 	assert(mc_refresh() == -ENODEV);
+	assert(mc_pause() == -ENODEV && mc_resume() == -ENODEV);
+	assert(mc_session_get_state() == MC_SESSION_UNINITIALIZED);
 	assert(mc_send(2, 0, 256, &payload, 1, &id) == -ENOTCONN && id == 123);
 	assert(mc_snapshot_read(NULL) == -EINVAL);
 	assert(!mc_snapshot_read(&before) && !before.radio.initialized);
@@ -261,6 +272,102 @@ int main(void)
 	assert(!mc_ready());
 	sync_node(0xabcdef);
 
+	/* Intentional pause releases the official API without masking TX/ACK policy. */
+	mc_poll();
+	notify = callback;
+	assert(mc_resume() == -EALREADY);
+	assert(!mc_refresh());
+	assert(mc_pause() == -EBUSY);
+	sync_node(0xabcdef);
+	assert(!mc_send(0x123456, 0, 42, &payload, 1, &id));
+	assert(mc_pause() == -EBUSY); /* FIFO completion must first be reaped. */
+	mc_poll();
+	unsigned lost_before = lost_events;
+	/* A partially received frame prevents closing a healthy session. */
+	input[0] = 0x94;
+	in_pos = 0;
+	in_used = 1;
+	uart_callbacks[0](&test_radio, NULL);
+	assert(mc_pause() == -EBUSY);
+	mc_poll();
+	assert(mc_pause() == -EBUSY && mc_ready());
+	test_now += 2000;
+	mc_poll();
+	uint32_t generation_before = diagnostic.generation;
+	out_used = 0;
+	tx_auto_pump = false;
+	assert(!mc_pause());
+	assert(mc_session_get_state() == MC_SESSION_PAUSING && !mc_ready());
+	assert(mc_pause() == -EALREADY && mc_resume() == -EBUSY);
+	assert(mc_refresh() == -EBUSY);
+	assert(mc_send(0x123456, 0, 42, &payload, 1, &id) == -ENOTCONN);
+	assert(!mc_snapshot_read(&after) && after.maintenance_paused && !after.radio.synced);
+	assert(!pause_events && lost_events == lost_before);
+	while (tx_irq_enabled)
+		uart_callbacks[0](&test_radio, NULL);
+	assert(!pause_events); /* No callback from ISR. */
+	mc_poll();
+	assert(mc_session_get_state() == MC_SESSION_PAUSED && pause_events == 1);
+	assert(!pause_status && lost_events == lost_before);
+	meshtastic_ToRadio control = meshtastic_ToRadio_init_zero;
+	assert(out_used >= 4 && output[0] == 0x94 && output[1] == 0xc3);
+	pb_istream_t wire = pb_istream_from_buffer(output + 4, out_used - 4);
+	assert(pb_decode(&wire, meshtastic_ToRadio_fields, &control));
+	assert(control.which_payload_variant == meshtastic_ToRadio_disconnect_tag &&
+	       control.disconnect);
+
+	/* Fifteen minutes of silence has no keepalive, reconnect or obsolete wait deadline. */
+	out_used = 0;
+	test_now += 900000;
+	mc_poll();
+	k_sem_reset(&wake_sem);
+	mc_wait(900000);
+	assert(test_waited == 900000 && !out_used && !refreshing && !recovery_pending);
+	assert(diagnostic.generation == generation_before && mc_local_node() == 0xabcdef);
+	message = (meshtastic_FromRadio)meshtastic_FromRadio_init_zero;
+	message.which_payload_variant = meshtastic_FromRadio_packet_tag;
+	message.packet.from = 0x123456;
+	message.packet.which_payload_variant = meshtastic_MeshPacket_decoded_tag;
+	message.packet.decoded.portnum = 42;
+	unsigned received_before = received_events;
+	feed(&message);
+	assert(received_events == received_before + 1 && !out_used);
+	message.which_payload_variant = meshtastic_FromRadio_rebooted_tag;
+	message.rebooted = true;
+	feed(&message);
+	assert(!out_used && mc_session_get_state() == MC_SESSION_PAUSED);
+	assert(!recovery_pending && !refreshing);
+	hw_error = 1;
+	uart_callbacks[0](&test_radio, NULL);
+	mc_poll();
+	assert(!out_used && mc_session_get_state() == MC_SESSION_PAUSED);
+
+	/* Caller performs physical wake; resume itself sends only official synchronization. */
+	tx_auto_pump = true;
+	assert(!mc_resume() && !mc_ready());
+	assert(mc_session_get_state() == MC_SESSION_RUNNING && refreshing);
+	assert(!mc_snapshot_read(&after) && !after.maintenance_paused);
+	mc_poll();
+	sync_node(0xabcdef);
+	assert(diagnostic.generation == generation_before + 1);
+
+	/* Failed disconnect remains paused and reports one failure; no automatic UART traffic. */
+	mc_poll();
+	out_used = 0;
+	tx_auto_pump = false;
+	assert(!mc_pause());
+	test_now += CONFIG_MESHTASTIC_TX_TIMEOUT_MS;
+	mc_poll();
+	assert(pause_events == 2 && pause_status == -ETIMEDOUT);
+	assert(mc_session_get_state() == MC_SESSION_PAUSED && !recovery_pending);
+	test_now += 900000;
+	mc_poll();
+	assert(!out_used && pause_events == 2);
+	tx_auto_pump = true;
+	assert(!mc_resume());
+	mc_poll();
+	sync_node(0xabcdef);
+
 	/* Burst overflow is bounded and reported, never treated as valid snapshot. */
 	memset(input, 0, 5000);
 	in_pos = 0;
@@ -272,7 +379,7 @@ int main(void)
 	assert(!mc_snapshot_read(&after));
 	assert(after.uart.dropped_bytes == 5000 - 4096);
 
-	puts("PASS: standalone arbitrary node, lifecycle, failures, counters, refresh, reboot in "
-	     "TX, silence, overflow");
+	puts("PASS: standalone lifecycle, pause/resume, official disconnect, 15-min silent wait, "
+	     "RX/reboot/fault while paused, pause timeout, refresh, TX and overflow recovery");
 	return 0;
 }

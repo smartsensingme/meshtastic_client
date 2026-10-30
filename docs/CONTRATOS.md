@@ -4,6 +4,24 @@ Revisão segundo o perfil completo em 30/10/2026. Este documento complementa os
 headers públicos e o README; não muda o protocolo ou a API. Código de terceiros
 em generated/reference/nanopb mantém seus avisos e formatação originais.
 
+## Extensão de pausa local — 30/10/2026
+
+mc_pause, mc_resume e mc_session_get_state são APIs externas sem chamadores
+internos. mc_pause valida fila/parser/RX e admite disconnect via write_message;
+mc_resume chama start_snapshot e publica RUNNING apenas após admissão. A thread
+dona deve resolver ACKs externos e tratar wake físico fora do módulo. Nenhuma
+dessas funções é ISR-safe ou reentrante em callbacks.
+
+reap_tx, chamada por mc_poll/recover_transport, conclui PAUSING por MC_PAUSED.
+Como a fila estava vazia na admissão e novas escritas são bloqueadas, a conclusão
+de controle corresponde ao disconnect. Status zero significa aceitação FIFO;
+erro significa pausa local com liberação remota não comprovada. recover_transport
+aborta/reap TX e marca resync em falha, mas não inicia recuperação automática se
+PAUSING/PAUSED. mc_poll continua processando RX e retorna antes da manutenção
+nesses estados. mc_wait conserva deadlines de TX/parser, sem prazos antigos de
+heartbeat/liveness. mc_snapshot_read copia maintenance_paused junto ao cache
+histórico; não lê pinos nem deduz energia remota.
+
 ## Eventos e duração dos dados
 
 Todos os callbacks acontecem na thread dona, nunca na ISR. mc_init/mc_refresh

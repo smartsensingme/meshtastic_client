@@ -7,6 +7,11 @@ Não considerar checkboxes antigos como prova de ausência de implementação.
 
 ## Já implementado e coberto
 
+- [x] Pausa/retomada opt-in genérica com disconnect oficial, estado local explícito,
+  manutenção suspensa e RX preservado; sem GPIO, placa ou sono remoto presumido.
+  Testes de silêncio simulado de 15 min, RX/reboot/falha em pausa, timeout do
+  disconnect e retomada por snapshot. Consumidor ainda não ativa a política.
+
 - [x] UART fornecida pela aplicação, RX por IRQ e ring limitado de 4096 bytes.
 - [x] Framing 94 c3 + tamanho big-endian, limite 512, fragmentação/ruído,
   comprimento inválido, timeout de frame parcial e ressincronização.

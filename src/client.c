@@ -54,6 +54,7 @@ static bool ready;
 static bool refreshing;
 static bool needs_resync;
 static bool recovery_pending;
+static enum mc_session_state session_state;
 static uint32_t nonce;
 static uint32_t local_node;
 static uint32_t retry_ms;
@@ -65,8 +66,8 @@ static int64_t refresh_due;
 static int64_t snapshot_completed_at;
 static int64_t next_sync_attempt;
 
-/** Interna: fault, disconnect, reap_tx, mc_refresh, node_event, commit_snapshot e process. Entrega
- * registro emprestado ao callback opcional, sem ISR; não reentrante. */
+/** Interna: fault, disconnect, reap_tx, mc_refresh, mc_resume, node_event, commit_snapshot e
+ * process. Entrega registro emprestado ao callback opcional, sem ISR; não reentrante. */
 static void event(struct mc_event *e)
 {
 	if (notify)
@@ -148,13 +149,20 @@ static int write_message(uint32_t packet_id, bool resync)
 }
 
 /** Interna: recover_transport/mc_poll. Consome no máximo depth conclusões; emite MC_TX_DRAINED
- * somente para ids de aplicação, fora da ISR. */
+ * para ids de aplicação e MC_PAUSED para disconnect intencional, fora da ISR. */
 static void reap_tx(void)
 {
 	for (size_t i = 0; i < CONFIG_MESHTASTIC_TX_QUEUE_DEPTH; ++i) {
 		struct mc_tx_result result;
 		if (!mc_tx_take(&result))
 			break;
+		/* Pausa só admite um controle numa fila previamente vazia. Resultado
+		 * mede FIFO, não stop bit no fio nem aceitação pelo Meshtastic. */
+		if (session_state == MC_SESSION_PAUSING && !result.packet_id) {
+			session_state = MC_SESSION_PAUSED;
+			struct mc_event e = {.type = MC_PAUSED, .status = result.status};
+			event(&e);
+		}
 		if (result.packet_id) {
 			struct mc_event e = {.type = MC_TX_DRAINED,
 					     .packet_id = result.packet_id,
@@ -199,6 +207,8 @@ int mc_refresh(void)
 {
 	if (!radio)
 		return -ENODEV;
+	if (session_state != MC_SESSION_RUNNING)
+		return -EBUSY;
 	if (refreshing)
 		return -EALREADY;
 	if (recovery_pending && k_uptime_get() < next_sync_attempt)
@@ -211,6 +221,68 @@ int mc_refresh(void)
 		event(&e);
 	}
 	return rc;
+}
+
+/** Pública, sem chamadores internos. Valida quiescência local, admite disconnect
+ * e publica pausa sem erro de sessão; reap_tx entrega conclusão FIFO pelo poll. */
+int mc_pause(void)
+{
+	if (!radio)
+		return -ENODEV;
+	if (session_state != MC_SESSION_RUNNING)
+		return -EALREADY;
+	if (!ready)
+		return -ENOTCONN;
+
+	struct mc_tx_stats pending;
+	mc_tx_snapshot(&pending);
+	if (refreshing || pending.pending || frame.state || ring_buf_size_get(&rx_ring) ||
+	    atomic_get(&rx_fault))
+		return -EBUSY;
+
+	/* Admitir antes de substituir a sessão: recusa não perde estado saudável. */
+	outgoing = (meshtastic_ToRadio)meshtastic_ToRadio_init_zero;
+	outgoing.which_payload_variant = meshtastic_ToRadio_disconnect_tag;
+	outgoing.disconnect = true;
+	int rc = write_message(0, false);
+	if (rc)
+		return rc;
+
+	session_state = MC_SESSION_PAUSING;
+	ready = false;
+	diagnostic.synced = false;
+	recovery_pending = false;
+	mc_wake();
+	return 0;
+}
+
+/** Pública, sem chamadores internos. Reabre por start_snapshot sem wake físico;
+ * falha de admissão preserva a pausa e sucesso rearma serviço normal. */
+int mc_resume(void)
+{
+	if (!radio)
+		return -ENODEV;
+	if (session_state == MC_SESSION_PAUSING)
+		return -EBUSY;
+	if (session_state != MC_SESSION_PAUSED)
+		return -EALREADY;
+
+	retry_ms = CONFIG_MESHTASTIC_SYNC_TIMEOUT_MS;
+	int rc = start_snapshot();
+	if (rc)
+		return rc;
+
+	session_state = MC_SESSION_RUNNING;
+	struct mc_event e = {.type = MC_REFRESHING};
+	event(&e);
+	mc_wake();
+	return 0;
+}
+
+/** Pública, sem chamadores internos. Consulta estado local sem UART ou relógio. */
+enum mc_session_state mc_session_get_state(void)
+{
+	return radio ? session_state : MC_SESSION_UNINITIALIZED;
 }
 
 /** Interna: process/mc_poll. Invalida sessão, aborta/reap TX e planeja ressincronização limitada;
@@ -226,6 +298,12 @@ static void recover_transport(int status, bool delayed)
 	reap_tx();
 	refreshing = false;
 	needs_resync = true;
+	/* RX/reboot/falha ainda são observados durante pausa, sem reacordar o
+	 * periférico por sync automática nem sair da pausa silenciosamente. */
+	if (session_state != MC_SESSION_RUNNING) {
+		recovery_pending = false;
+		return;
+	}
 	recovery_pending = true;
 	if (was_ready)
 		retry_ms = CONFIG_MESHTASTIC_SYNC_TIMEOUT_MS;
@@ -467,6 +545,7 @@ int mc_init(const struct device *uart, mc_callback callback)
 
 	/* Registration accepted: retire the previous local epoch. */
 	radio = uart;
+	session_state = MC_SESSION_RUNNING;
 	notify = callback;
 	ready = false;
 	refreshing = false;
@@ -543,6 +622,8 @@ void mc_poll(void)
 			fault(-EMSGSIZE);
 	}
 	/* Maintenance uses existing deadlines, no periodic polling worker. */
+	if (session_state != MC_SESSION_RUNNING)
+		return;
 	now = k_uptime_get();
 	if (ready && now - last_rx >= CONFIG_MESHTASTIC_LIVENESS_TIMEOUT_MS) {
 		recover_transport(-ENOTCONN, false);
@@ -659,6 +740,7 @@ int mc_snapshot_read(struct mc_snapshot *snapshot)
 		return -EINVAL;
 
 	/* Cache/owner counters first; ISR values are independent observations. */
+	snapshot->maintenance_paused = radio && session_state != MC_SESSION_RUNNING;
 	snapshot->radio = diagnostic;
 	snapshot->uart = (struct mc_uart_snapshot){
 	    .bytes = (uint32_t)atomic_get(&rx_bytes),

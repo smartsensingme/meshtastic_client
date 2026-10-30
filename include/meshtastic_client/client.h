@@ -2,7 +2,7 @@
 /** @file
  * Cliente singleton da API serial Meshtastic. Todas as APIs, exceto mc_wake,
  * pertencem a uma única thread dona. Não são reentrantes: callbacks não devem
- * chamar init/poll/refresh/send; podem copiar dados e chamar mc_wake.
+ * chamar init/poll/refresh/send/pause/resume; podem copiar dados e chamar mc_wake.
  * Sem malloc, espera por slot ou callbacks de aplicação na ISR.
  */
 #ifndef MESHTASTIC_CLIENT_H
@@ -39,6 +39,16 @@ enum mc_event_type {
 	MC_SNAPSHOT_BEGIN, /**< Inicia replay metadata/canais/nós, seguido de SYNCED. */
 	MC_TX_DRAINED,	   /**< packet_id/status/length: FIFO aceitou tudo (0) ou erro (<0).
 			    * Não prova wire idle, recepção UART, rádio ou entrega remota. */
+	MC_PAUSED,	   /**< Pausa local concluída: status=0 se disconnect aceito na FIFO,
+			    * errno negativo se falhou. Não prova wire idle ou sono remoto. */
+};
+
+/** Estado local da sessão; não descreve o estado de energia físico do rádio. */
+enum mc_session_state {
+	MC_SESSION_UNINITIALIZED, /**< Nenhuma UART inicializada. */
+	MC_SESSION_RUNNING,	  /**< Serviço normal, incluindo sincronização/recuperação. */
+	MC_SESSION_PAUSING,	  /**< Disconnect admitido; aguardando resultado FIFO. */
+	MC_SESSION_PAUSED,	  /**< Manutenção/reconexão suspensas até mc_resume. */
 };
 
 /** Registro emprestado somente durante o callback; copiar antes de armazenar. */
@@ -102,11 +112,38 @@ void mc_wait(int32_t maximum_ms);
 
 /** Pedido externo ou interno (mc_init/recover_transport/mc_poll) de snapshot.
  * Preserva sessão saudável. Retorna 0=aceito, -ENODEV antes de init, -EALREADY
- * se atualizando, -EAGAIN por backoff/fila cheia ou erro de transporte/encoding.
+ * se atualizando, -EBUSY em pausa, -EAGAIN por backoff/fila cheia ou erro de transporte/encoding.
  * Emissão síncrona de MC_REFRESHING apenas se aceito; não aguarda resposta.
- * @return 0=pedido enfileirado; -ENODEV/-EALREADY/-EAGAIN ou erro de admissão/codificação.
+ * @return 0=pedido enfileirado; -ENODEV/-EALREADY/-EBUSY/-EAGAIN ou erro de admissão/codificação.
  */
 int mc_refresh(void);
+
+/** Pausa externa, na thread dona; nunca chamada internamente.
+ * Exige sessão pronta, sem refresh, slots TX, frame parcial ou RX aguardando poll.
+ * A aplicação deve resolver seus ACKs antes: este módulo não os rastreia.
+ * Enfileira ToRadio.disconnect oficial e impede novos send/refresh imediatamente.
+ * mc_poll conclui por MC_PAUSED, após FIFO ou falha; manter RX e poll ativos.
+ * Não espera wire idle, não suspende UART, não controla GPIO ou energia do rádio.
+ * Cache permanece histórico, synced=false; pausa não emite MC_DISCONNECTED.
+ * @return 0=admitido; -ENODEV sem init; -EALREADY pausando/pausado;
+ * -ENOTCONN sem sessão pronta; -EBUSY com trabalho pendente; erro de admissão.
+ */
+int mc_pause(void);
+
+/** Retomada externa, na thread dona, somente após MC_SESSION_PAUSED.
+ * A aplicação deve despertar o periférico e verificar seu prazo de retorno antes.
+ * Admite snapshot completo pelo protocolo oficial; só MC_SYNCED restaura ready.
+ * Em recusa de admissão mantém pausa. Após admissão, recuperação normal é retomada.
+ * Não retransmite payloads nem aciona wake/reset. Não chamada internamente.
+ * @return 0=sync admitido; -ENODEV sem init; -EBUSY pausando;
+ * -EALREADY em serviço normal; erro de codificação/fila, sem sair da pausa.
+ */
+int mc_resume(void);
+
+/** Consulta externa na thread dona, sem I/O ou mutação; sem chamadores internos.
+ * @return Estado local, inclusive UNINITIALIZED antes de init; não prova sono.
+ */
+enum mc_session_state mc_session_get_state(void);
 
 /** Consulta externa, mesma thread: sessão sincronizada e ainda não invalidada.
  * false antes de init; true não garante identidade/canal aceitos pela aplicação.

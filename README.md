@@ -237,7 +237,7 @@ instâncias ou sincronização entre dois produtores. UART e callback sobrevivem
 à sessão. Não compartilhar UART com console ou outro callback. A aplicação
 chama init/poll/wait/send/refresh/snapshot e mantém os prazos próprios; IRQ só
 insere bytes, serve FIFO e sinaliza wake. Callbacks são síncronos e não
-reentrantes: copiar dados e retornar; não chamar init/poll/send/refresh dentro
+reentrantes: copiar dados e retornar; não chamar init/poll/send/refresh/pause/resume dentro
 deles. Formatação pesada pode ir a consumidor com cópias/fila limitada.
 
 | Estado | Comportamento e transição |
@@ -247,6 +247,8 @@ deles. Formatação pesada pode ir a consumidor com cópias/fila limitada.
 | Pronto | Recebe/envia; heartbeat e liveness; snapshot por cópia |
 | Refresh | Pronto anterior preservado; nova geração só após resposta completa |
 | Recuperação | Sessão invalidada; aborta TX, padding+config após backoff limitado |
+| Pausando | Disconnect oficial admitido; ready=false, sem manutenção; poll acompanha FIFO/RX |
+| Pausado | RX/cache continuam; sem heartbeat, refresh, liveness ou reconexão automática |
 
 Snapshot completo exige id local, User local, algum canal, firmware e seção
 LoRa. Seções opcionais ausentes ficam identificadas pelas flags *_received;
@@ -264,6 +266,57 @@ segura de parser remoto em voo: para sessão existente preferir refresh, não re
 Se envio inicial falhar, IRQs são desabilitadas e cliente fica sem sessão ativa.
 mc_wait funciona antes de init; maximum_ms<=0 não espera; mc_wake é ISR-safe.
 local_node pode manter último id após desconexão: consultar ready para validade.
+
+### Pausa intencional para periféricos com economia de energia
+
+`mc_pause()` é opt-in: consumidores existentes continuam no ciclo normal.
+O chamador resolve ACKs/política da aplicação e chama `mc_poll()` para consumir
+conclusões antes de pedir pausa. O pedido exige sessão pronta e ausência de
+refresh, slots TX, frame parcial ou RX ainda não processado. Recusa não invalida
+a sessão; aceitação envia `ToRadio.disconnect` oficial e retorna sem esperar.
+
+Após aceitação, `mc_ready()` é false e send/refresh são recusados. Continuar
+poll/wait: `MC_PAUSED` chega pela thread dona quando o controle foi aceito pela
+FIFO (status zero) ou falhou (errno negativo). Esse evento **não prova stop bit
+no fio, recepção do disconnect ou sono remoto**. Não desligar UART/alimentação
+por causa dele. Se o disconnect falhar, o cliente permanece pausado, sem assumir
+que o periférico possa dormir; a aplicação decide retomar. Pausa planejada não
+emite MC_DISCONNECTED. RX continua ativo e entrega eventos; falha/reboot registra
+o estado necessário para ressincronização, sem iniciar tráfego durante a pausa.
+
+`mc_session_get_state()` distingue UNINITIALIZED/RUNNING/PAUSING/PAUSED.
+RUNNING inclui sincronização e recuperação; consultar ready separadamente.
+`mc_snapshot_read().maintenance_paused` é true tanto em PAUSING quanto em PAUSED;
+cache e idade permanecem disponíveis, `radio.synced=false` durante a pausa.
+
+Para retomar, o chamador trata wake e tempo de retorno do seu periférico fora do
+módulo, mantém o transporte receptivo e só então chama `mc_resume()`. A função
+admite snapshot completo oficial, sem GPIO/reset/payload de wake. Recusa mantém
+pausa; aceitação restaura manutenção/recuperação e emite MC_REFRESHING. Aguardar
+MC_SYNCED antes de usar a sessão; os prazos de recuperação existentes continuam
+limitados por backoff. Não há fast resume nem retransmissão de payloads.
+
+Exemplo de sequência, na única thread dona:
+
+```c
+mc_poll();
+/* A aplicação já resolveu ACKs e novas admissões; -EBUSY pede adiamento. */
+int rc = mc_pause();
+/* Continuar mc_poll()/mc_wait() até MC_PAUSED; conferir status no callback.
+ * Em outro ciclo do dono, quando houver necessidade de sessão e depois do
+ * wake físico/prazo verificado pelo adaptador da aplicação: */
+if (mc_session_get_state() == MC_SESSION_PAUSED && peripheral_ready_to_sync) {
+    rc = mc_resume();
+}
+```
+
+`peripheral_ready_to_sync` representa decisão externa, não API/export do cliente.
+Não chamar pause/resume de callbacks ou ISR. Nenhuma aplicação é automaticamente
+pausada por este módulo. A retenção de mensagens durante desconexão depende da
+fila limitada do firmware remoto; não há garantia de entrega à aplicação local.
+
+Compatibilidade: novos eventos foram acrescentados ao final do enum; snapshot
+ganhou campo e exige recompilar consumidores. Não houve remoção de API.
 
 ## Contadores, limites e memória
 

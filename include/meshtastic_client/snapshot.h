@@ -105,6 +105,8 @@ struct mc_uart_snapshot {
 
 /* Owning copy: no pointers into client buffers, no keys or raw protobufs. */
 struct mc_snapshot {
+	bool maintenance_paused; /**< Pausa intencional solicitada ou concluída; sem prova de sono.
+				  */
 	struct mc_diag_snapshot radio; /**< Cache de rádio por valor, sem credenciais. */
 	struct mc_uart_snapshot uart;  /**< Observações locais de transporte, não entrega LoRa. */
 	bool refreshing;	/**< Novo snapshot em curso; radio pode conter geração anterior. */
