@@ -140,3 +140,13 @@ sem exigir reset mantido ou nova montagem nesta etapa.
   nesta etapa nem declarar ciclo elétrico específico validado. Recuperação após
   evento observado foi confirmada (sync 2,33 s, três RX/TX/ACK e refresh), mas
   não substitui o ensaio isolado. Evidência no relatório físico do consumidor.
+
+## Fechamento solicitado do perfil — 30/10/2026
+
+- [x] Revisar novamente fontes, headers, Kconfig, build, exemplo e integração;
+  completar contratos de parâmetros/retornos públicos/privados e mapa de eventos.
+- [x] Manter extração em shared/modules com Git próprio e link no consumidor;
+  confirmar fonte/testes sem aplicação e conservar fontes/licenças de terceiros.
+- [ ] Demais ensaios físicos permanecem pendentes por decisão do usuário nesta
+  etapa. Não solicitar novas manobras nem registrar cenários não exercitados
+  como aprovados. Retomada mediante nova solicitação ou problema em campo.

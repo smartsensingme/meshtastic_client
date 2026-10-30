@@ -20,7 +20,8 @@ static void copy_text(char *to, size_t size, const char *from)
  * e incrementa geração uint32 com wrap; não faz I/O. */
 void mc_diag_reset(struct mc_diag_snapshot *s)
 {
-	uint32_t generation = s->generation + 1, errors = s->client_errors;
+	uint32_t generation = s->generation + 1;
+	uint32_t errors = s->client_errors;
 	int32_t last_error = s->last_error;
 	int64_t last_rx = s->last_rx_ms;
 

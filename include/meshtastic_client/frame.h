@@ -26,6 +26,9 @@ struct mc_frame {
  * f não NULL e inicializado; b é byte bruto. 1=frame completo (inclusive vazio),
  * 0=incompleto/ruído, -1=comprimento >512 e parser reiniciado. Sem checksum próprio.
  * Timeout pertence ao chamador; cliente reinicia frame parcial após 2000 ms.
+ * @param f Parser não NULL inicializado, exclusivo desta sequência de bytes.
+ * @param byte Byte bruto; o estado é atualizado in-place, sem guardar ponteiro externo.
+ * @return 1 completo, 0 incompleto/ruído, -1 comprimento inválido; dados completos ficam em f.
  */
 int mc_frame_byte(struct mc_frame *f, uint8_t byte);
 

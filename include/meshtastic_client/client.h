@@ -73,23 +73,30 @@ typedef void (*mc_callback)(const struct mc_event *event);
  * preservam sessão anterior; erro de envio inicial deixa cliente sem sessão.
  * Reinicialização aceita limpa sessão/cache/TX, preserva contadores RX por boot.
  * Pode emitir MC_REFRESHING antes de retornar. Sem init implícito nas outras APIs.
+ * @param uart Dispositivo emprestado, exclusivo, pronto e quiescente; válido até próximo init.
+ * @param callback Função externa emprestada; NULL desliga eventos, não o protocolo.
+ * @return 0 após admissão do pedido inicial; errno negativo conforme contrato acima.
  */
 int mc_init(const struct device *uart, mc_callback callback);
 
 /** Serviço externo na thread dona: reap TX, RX e prazos; emite callbacks.
  * Antes de init é no-op. Drenagem RX depende da carga; não promete WCET fixo.
  * Chamar antes de aguardar; não chamar de dentro de callback nem de ISR.
+ * @return Sem valor; eventos/estado/cache publicados sincronamente; nenhum efeito antes de init.
  */
 void mc_poll(void);
 
 /** Sinal externo/interno (irq/TX) seguro em ISR e antes de init; semáforo retém
  * um wake. Não consulta rádio nem altera estado. Init aceito limpa wake anterior.
+ * @return Sem valor; sinal retido até consumo por wait ou reset em init.
  */
 void mc_wake(void);
 
 /** Espera externa na thread dona, no máximo maximum_ms milissegundos.
  * <=0 retorna imediatamente. Inclui prazos internos, mas não executa poll.
  * Antes de init ainda espera wake/prazo externo. Não usar em ISR/callback.
+ * @param maximum_ms Limite externo em ms; <=0 não espera; INT32_MAX é permitido.
+ * @return Sem valor; retorno por sinal ou prazo, seguido de novo poll pelo chamador.
  */
 void mc_wait(int32_t maximum_ms);
 
@@ -97,16 +104,19 @@ void mc_wait(int32_t maximum_ms);
  * Preserva sessão saudável. Retorna 0=aceito, -ENODEV antes de init, -EALREADY
  * se atualizando, -EAGAIN por backoff/fila cheia ou erro de transporte/encoding.
  * Emissão síncrona de MC_REFRESHING apenas se aceito; não aguarda resposta.
+ * @return 0=pedido enfileirado; -ENODEV/-EALREADY/-EAGAIN ou erro de admissão/codificação.
  */
 int mc_refresh(void);
 
 /** Consulta externa, mesma thread: sessão sincronizada e ainda não invalidada.
  * false antes de init; true não garante identidade/canal aceitos pela aplicação.
+ * @return Última validade local da sessão; não verifica disponibilidade física por consulta.
  */
 bool mc_ready(void);
 
 /** Consulta externa, mesma thread: último node local publicado, zero antes de
  * init/primeira sincronização. Pode manter valor antigo após desconexão: usar ready.
+ * @return Id uint32 publicado, ou zero se nunca sincronizou desde init.
  */
 uint32_t mc_local_node(void);
 
@@ -118,6 +128,13 @@ uint32_t mc_local_node(void);
  * -EAGAIN por fila cheia, -EMSGSIZE por encoding, ou falha TX. 0 significa apenas
  * aceitação local. MC_TX_DRAINED vem de mc_poll, nunca desta função.
  * ACK/hop são opções de pacote do Kconfig; não há retransmissão da aplicação.
+ * @param destination Nó unicast remoto válido, diferente de zero/UINT32_MAX/local.
+ * @param channel Índice de canal 0..7 no pedido ao rádio.
+ * @param port PortNum numérico, conteúdo interpretado somente pelo rádio/aplicação.
+ * @param payload Bytes emprestados durante a chamada; copiados em sucesso.
+ * @param length Comprimento de payload em bytes, 1..MC_PAYLOAD_MAX.
+ * @param packet_id Saída obrigatória, preservada em qualquer recusa.
+ * @return 0=aceitação local; errno negativo sem garantia de entrega remota.
  */
 int mc_send(uint32_t destination, uint8_t channel, uint32_t port, const uint8_t *payload,
 	    size_t length, uint32_t *packet_id);

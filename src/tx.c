@@ -10,6 +10,7 @@
 #include "tx_internal.h"
 #include <meshtastic_client/frame.h>
 
+/** Bytes de payload máximo mais header serial; capacidade de cada slot privado. */
 #define TX_FRAME_BYTES (MC_FRAME_MAX + 4)
 
 /* Um slot pertence à fila desde a cópia até mc_tx_take, mesmo após FIFO completa. */
@@ -25,12 +26,13 @@ static struct tx_slot slots[CONFIG_MESHTASTIC_TX_QUEUE_DEPTH];
 static struct k_spinlock lock;
 static const struct device *uart;
 static void (*signal_owner)(void);
-static size_t head, count, done;
+static size_t head;
+static size_t count;
+static size_t done;
 static int error_code;
 static int64_t last_progress;
 static struct mc_tx_stats stats;
 
-/* Internal arithmetic helper for cumulative diagnostic counters, lock held. */
 /** Interna: put/mc_tx_write/mc_tx_irq/mc_tx_abort. Soma saturante uint32 para estatísticas TX; lock
  * já deve estar adquirido. */
 static void add(uint32_t *value, uint32_t amount)
@@ -38,20 +40,20 @@ static void add(uint32_t *value, uint32_t amount)
 	*value = UINT32_MAX - *value < amount ? UINT32_MAX : *value + amount;
 }
 
-/* Owner init before IRQ activation; reinitialization requires a quiescent UART. */
 /** Interna: mc_init. Reinicia fila/estatísticas com IRQ quiescente e sem slots; não reutilizar
  * buffers em voo. */
 void mc_tx_init(const struct device *device, void (*wake)(void))
 {
 	uart = device;
 	signal_owner = wake;
-	head = count = done = 0;
+	done = 0;
+	count = 0;
+	head = 0;
 	error_code = 0;
 	last_progress = 0;
 	memset(&stats, 0, sizeof(stats));
 }
 
-/* Internal enqueue under lock: producer fully owns slot before publishing count. */
 /** Interna: mc_tx_write com lock adquirido. Copia header/payload ou padding antes de publicar
  * count; chamador garante capacidade. */
 static void put(const uint8_t *payload, size_t length, uint32_t packet_id, bool padding)

@@ -30,7 +30,8 @@ static const char *const LOG_TAG = "MESH";
 #if CONFIG_MESHTASTIC_LIVENESS_TIMEOUT_MS <= CONFIG_MESHTASTIC_HEARTBEAT_INTERVAL_MS
 #error "Liveness timeout must exceed the heartbeat interval"
 #endif
-static struct mc_diag_snapshot diagnostic, staging;
+static struct mc_diag_snapshot diagnostic;
+static struct mc_diag_snapshot staging;
 RING_BUF_DECLARE(rx_ring, 4096);
 K_SEM_DEFINE(wake_sem, 0, 1);
 static const struct device *radio;
@@ -39,12 +40,31 @@ static struct mc_frame frame;
 static meshtastic_FromRadio incoming;
 static meshtastic_ToRadio outgoing;
 static uint8_t tx[MC_FRAME_MAX];
-static atomic_t rx_fault, rx_bytes, rx_dropped, rx_uart_errors;
-static uint32_t rx_frames, rx_decode_errors, rx_packets, rx_encrypted, rx_data, rx_routes;
-static bool ready, refreshing, needs_resync, recovery_pending;
-static uint32_t nonce, local_node, retry_ms;
-static int64_t last_rx, last_request, last_byte, heartbeat_due, refresh_due, snapshot_completed_at,
-    next_sync_attempt;
+static atomic_t rx_fault;
+static atomic_t rx_bytes;
+static atomic_t rx_dropped;
+static atomic_t rx_uart_errors;
+static uint32_t rx_frames;
+static uint32_t rx_decode_errors;
+static uint32_t rx_packets;
+static uint32_t rx_encrypted;
+static uint32_t rx_data;
+static uint32_t rx_routes;
+static bool ready;
+static bool refreshing;
+static bool needs_resync;
+static bool recovery_pending;
+static uint32_t nonce;
+static uint32_t local_node;
+static uint32_t retry_ms;
+static int64_t last_rx;
+static int64_t last_request;
+static int64_t last_byte;
+static int64_t heartbeat_due;
+static int64_t refresh_due;
+static int64_t snapshot_completed_at;
+static int64_t next_sync_attempt;
+
 /** Interna: fault, disconnect, reap_tx, mc_refresh, node_event, commit_snapshot e process. Entrega
  * registro emprestado ao callback opcional, sem ISR; não reentrante. */
 static void event(struct mc_event *e)
@@ -74,6 +94,7 @@ void mc_wake(void)
 static void disconnect(void)
 {
 	bool had_session = ready;
+
 	ready = false;
 	diagnostic.synced = false;
 	if (had_session) {
@@ -126,9 +147,6 @@ static int write_message(uint32_t packet_id, bool resync)
 	return mc_tx_write(tx, stream.bytes_written, packet_id, resync);
 }
 
-/* Completion delivery belongs to the owner, never the UART ISR. Bound work to
- * queue capacity even if a callback publishes another frame while being called.
- */
 /** Interna: recover_transport/mc_poll. Consome no máximo depth conclusões; emite MC_TX_DRAINED
  * somente para ids de aplicação, fora da ISR. */
 static void reap_tx(void)
@@ -195,15 +213,14 @@ int mc_refresh(void)
 	return rc;
 }
 
-/* Discard frames from a failed epoch, preserving all completion results. Padding
- * on the next sync drains a bounded partial parser state at the peer before a
- * fresh header. No application packet is retransmitted automatically.
- */
 /** Interna: process/mc_poll. Invalida sessão, aborta/reap TX e planeja ressincronização limitada;
  * sem retransmitir aplicação ou presumir rollback remoto. */
 static void recover_transport(int status, bool delayed)
 {
 	bool was_ready = ready;
+
+	/* Cancelar a época falha preserva conclusões; padding no próximo sync
+	 * esgota um parser remoto parcial, sem retransmitir aplicação. */
 	disconnect();
 	mc_tx_abort(status);
 	reap_tx();
@@ -230,7 +247,8 @@ static void node_event(uint32_t id, const char *name, const char *short_name)
  * as seções opcionais nem todo o inventário da rede. */
 static bool snapshot_complete(void)
 {
-	bool own_user = false, channel_seen = false;
+	bool own_user = false;
+	bool channel_seen = false;
 	for (size_t i = 0; i < staging.node_count; i++)
 		if (staging.nodes[i].id == staging.local_node && staging.nodes[i].has_user)
 			own_user = true;
@@ -560,7 +578,8 @@ void mc_wait(int32_t maximum_ms)
 {
 	if (maximum_ms <= 0)
 		return;
-	int64_t now = k_uptime_get(), due = now + maximum_ms;
+	int64_t now = k_uptime_get();
+	int64_t due = now + maximum_ms;
 	if (frame.state)
 		due = MIN(due, last_byte + 2000);
 	due = MIN(due, mc_tx_deadline());

@@ -382,3 +382,21 @@ nRF; não comprova comunicação física com rádio nem comportamento de todo dr
 O ajuste EasyDMA 128 bytes é exclusivo da configuração das aplicações nRF,
 sem condicional Nordic no cliente. Em outro alvo, revisar FIFO, IRQ, baud,
 runtime-PM e energia do conjunto sem inserir pinagem/identidade no módulo.
+
+## Fechamento do perfil de documentação e extração
+
+A revisão de 30/10/2026 aplica o perfil completo aos fontes próprios: contratos
+públicos e privados, campos/enums, parâmetros/retornos, chamadores, fases,
+propriedade, tempo, concorrência e custo limitado. O mapa de eventos e chamadas
+está em [docs/CONTRATOS.md](docs/CONTRATOS.md). Código vendorizado foi preservado.
+
+O módulo já reside no repositório local independente `shared/modules/meshtastic_client`;
+seu consumidor usa um link, sem duplicação. Para outra aplicação, fornecer este
+checkout e rt_log; nenhum arquivo de sensor/CONC/support é requisito de build ou
+suíte independente. É possível mudar o nome do diretório, indicando rt_log pelo
+ambiente dos testes ou RT_LOG_MODULE_DIR do exemplo. Não há remoto/publicação.
+
+Ensaios físicos remanescentes foram deixados pendentes por decisão do usuário.
+A extração/documentação não depende deles e não transforma cobertura parcial em
+validação de todos os cenários. O agendamento de janelas fica em outro módulo;
+esta revisão não acrescenta políticas de sono ou comandos administrativos ao cliente.

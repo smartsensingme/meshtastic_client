@@ -8,6 +8,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
 /* Read-only mirror of information received from the radio. Never stores PSKs. */
 struct mc_diag_node {
 	uint32_t id;	     /**< Identificador Meshtastic do nó; zero não é nó válido. */
@@ -101,6 +102,7 @@ struct mc_uart_snapshot {
 	uint32_t tx_bytes;    /**< Bytes aceitos na FIFO desde init, saturante; não entrega. */
 	uint32_t tx_pending;  /**< Slots ocupados incluindo conclusões por reap, 0..depth. */
 };
+
 /* Owning copy: no pointers into client buffers, no keys or raw protobufs. */
 struct mc_snapshot {
 	struct mc_diag_snapshot radio; /**< Cache de rádio por valor, sem credenciais. */
@@ -110,13 +112,14 @@ struct mc_snapshot {
 	int64_t
 	    snapshot_completed_at_ms; /**< Uptime ms do último commit; zero antes do primeiro. */
 };
-/* Read from the same owner thread as mc_poll/send/refresh, not from ISR.
- * The copy can then be passed to another thread. No UART access, logging,
- * allocation, refresh or state changes. Returns 0, or -EINVAL for NULL.
- * Before the first successful config, radio.initialized/synced are false.
- */
-/* Uso externo; não chamado internamente. Sem bloqueio de I/O, cópia limitada.
- * Permite leitura antes de init; contadores RX sobrevivem a reinit, TX não.
+/** Cópia externa pela thread dona de poll/send/refresh, nunca ISR.
+ * Pode ser chamada antes de init e por callback do dono; não inicia consulta,
+ * logging, alocação, refresh nem altera sessão. Copiar antes de publicar a outra
+ * thread. Contadores RX são amostrados individualmente; TX sob lock próprio.
+ * Antes do primeiro commit, initialized/synced são falsos; histórico pode ser
+ * retido com synced=false. Sem chamadores internos.
+ * @param snapshot Destino não NULL e distinto das estruturas internas.
+ * @return 0; -EINVAL para NULL, sem mutação. Custo de cópia limitado pelo Kconfig.
  */
 int mc_snapshot_read(struct mc_snapshot *snapshot);
 #ifdef __cplusplus
