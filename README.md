@@ -1,7 +1,18 @@
 # meshtastic_client
 
-Módulo Zephyr reutilizável em shared/modules/meshtastic_client, com Git local
-sem remoto. O consumidor usa link de integração e modules.lock.json. Não depende
+`meshtastic_client` conecta uma aplicação Zephyr a um rádio com firmware
+Meshtastic pela UART. Permite acompanhar a conexão, consultar metadados do rádio,
+canais e nós, enviar pacotes unicast e receber eventos e dados pela API de callbacks.
+
+Use quando um microcontrolador executa a aplicação e delega a comunicação LoRa
+a um rádio Meshtastic separado. O cliente trata o protocolo serial e mantém uma
+cópia dos dados conhecidos do rádio; a aplicação decide o conteúdo dos pacotes,
+o destino e o significado das confirmações. Criptografia, roteamento e
+retransmissões da malha continuam a cargo do firmware Meshtastic.
+
+Repositório: [smartsensingme/meshtastic_client](https://github.com/smartsensingme/meshtastic_client).
+
+Módulo Zephyr reutilizável em `shared/modules/meshtastic_client`. O consumidor usa link de integração e modules.lock.json. Não depende
 de aplicações de telemetria. API em
 `include/meshtastic_client/client.h` e `include/meshtastic_client/snapshot.h`.
 Não embute identidades de nós, JSON de aplicação ou pinagem de placas. Recebe
@@ -270,8 +281,12 @@ local_node pode manter último id após desconexão: consultar ready para valida
 ### Pausa intencional para periféricos com economia de energia
 
 `mc_pause()` é opt-in: consumidores existentes continuam no ciclo normal.
-O chamador resolve ACKs/política da aplicação e chama `mc_poll()` para consumir
-conclusões antes de pedir pausa. O pedido exige sessão pronta e ausência de
+O chamador define a política de ACKs e chama `mc_poll()` para consumir conclusões
+antes de pedir pausa. O cliente não acompanha essas transações. Se uma aplicação
+conservar espera lógica de confirmação durante a pausa, ela mantém correlação e
+prazo original, copia RX também durante pausa/snapshot e só aplica a resposta
+após validar a sessão. Perda/timeout precisa ter tratamento na aplicação; a fila
+remota limitada não garante retenção de confirmações. O pedido exige sessão pronta e ausência de
 refresh, slots TX, frame parcial ou RX ainda não processado. Recusa não invalida
 a sessão; aceitação envia `ToRadio.disconnect` oficial e retorna sem esperar.
 
@@ -449,7 +464,7 @@ O módulo já reside no repositório local independente `shared/modules/meshtast
 seu consumidor usa um link, sem duplicação. Para outra aplicação, fornecer este
 checkout e rt_log; nenhum arquivo de sensor/CONC/support é requisito de build ou
 suíte independente. É possível mudar o nome do diretório, indicando rt_log pelo
-ambiente dos testes ou RT_LOG_MODULE_DIR do exemplo. Não há remoto/publicação.
+ambiente dos testes ou RT_LOG_MODULE_DIR do exemplo.
 
 Ensaios físicos remanescentes foram deixados pendentes por decisão do usuário.
 A extração/documentação não depende deles e não transforma cobertura parcial em
@@ -461,3 +476,20 @@ fixado, sem normalização ou validação de toda a faixa enum. Valores desconhe
 podem aparecer ao conectar outra versão; flags *_received indicam presença da
 seção, não aprovação de sua configuração. Consulte os schemas fixados antes de
 interpretar enums. Não usar nomes ou canal anunciado como autenticação.
+
+### Extensão UART privada opcional
+
+`CONFIG_MESHTASTIC_LOCAL_EXTENSION=n` mantém a imagem oficial como padrão.
+Quando habilitada para firmware de rádio customizado compatível,
+`mc_local_extension_send()` admite 1..160 bytes em um frame Protobuf contendo
+somente o campo experimental privado 99 (wire type bytes). Não é um campo
+reservado/aprovado pelo projeto Meshtastic oficial. O fork precisa negociar
+versão antes de usar; não habilitar por inferência de nome da placa.
+O recebimento produz `MC_LOCAL_EXTENSION`, distinto de `MC_RECEIVED` e sem
+metadados de MeshPacket. Payload emprestado somente no callback; copiar se retido.
+Não há interpretação de MQTT/backlog, conhecimento de placa ou credenciais aqui.
+O transporte reutiliza framing/fila/IRQ/deadlines existentes; não cria thread,
+polling adicional ou envio RF. Retorno zero é somente admissão UART local;
+imagem sem extensão pode ignorar o frame. Aplicação deve manter seus dados e
+correlação até a confirmação de sua camada. A extensão é privada e opt-in,
+sem alteração dos arquivos Protobuf gerados oficiais.

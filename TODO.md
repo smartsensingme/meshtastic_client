@@ -150,3 +150,8 @@ sem exigir reset mantido ou nova montagem nesta etapa.
 - [ ] Demais ensaios físicos permanecem pendentes por decisão do usuário nesta
   etapa. Não solicitar novas manobras nem registrar cenários não exercitados
   como aprovados. Retomada mediante nova solicitação ou problema em campo.
+
+- [x] Extensão UART privada opt-in: frame bytes tag 99, 160 bytes, evento próprio,
+  sem semântica MQTT/placa; testes de API C/C++, framing e modo desabilitado.
+- [ ] Validar transporte privado em placa com o fork de rádio correspondente;
+  teste host/build não equivale a validação física.

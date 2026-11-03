@@ -12,6 +12,7 @@ source = """
 #include <meshtastic_client/snapshot.h>
 #include <meshtastic_client/diagnostics.h>
 #ifdef __cplusplus
+extern "C" int mc_local_extension_send(const uint8_t *, size_t);
 extern "C" int mc_init(const struct device *, mc_callback);
 extern "C" int mc_snapshot_read(struct mc_snapshot *);
 #endif

@@ -41,6 +41,8 @@ enum mc_event_type {
 			    * Não prova wire idle, recepção UART, rádio ou entrega remota. */
 	MC_PAUSED,	   /**< Pausa local concluída: status=0 se disconnect aceito na FIFO,
 			    * errno negativo se falhou. Não prova wire idle ou sono remoto. */
+	MC_LOCAL_EXTENSION, /**< Opaque private UART field 99; payload/length borrowed
+			     * only during callback. Not an RF packet or official API. */
 };
 
 /** Estado local da sessão; não descreve o estado de energia físico do rádio. */
@@ -120,7 +122,10 @@ int mc_refresh(void);
 
 /** Pausa externa, na thread dona; nunca chamada internamente.
  * Exige sessão pronta, sem refresh, slots TX, frame parcial ou RX aguardando poll.
- * A aplicação deve resolver seus ACKs antes: este módulo não os rastreia.
+ * A aplicação deve definir antes como tratar seus ACKs: este módulo não os rastreia.
+ * Se conservar uma espera lógica durante a pausa, deve manter correlação/prazo,
+ * acolher RX também em pausa/snapshot e validar a sessão antes de aplicar resposta.
+ * Fila remota limitada não garante retenção/entrega de confirmações.
  * Enfileira ToRadio.disconnect oficial e impede novos send/refresh imediatamente.
  * mc_poll conclui por MC_PAUSED, após FIFO ou falha; manter RX e poll ativos.
  * Não espera wire idle, não suspende UART, não controla GPIO ou energia do rádio.
@@ -175,6 +180,15 @@ uint32_t mc_local_node(void);
  */
 int mc_send(uint32_t destination, uint8_t channel, uint32_t port, const uint8_t *payload,
 	    size_t length, uint32_t *packet_id);
+
+/** Private opt-in UART bytes, external application only; no internal callers.
+ * Owner-thread only, never ISR/callback. Requires RUNNING/ready and
+ * CONFIG_MESHTASTIC_LOCAL_EXTENSION. Copies 1..160 bytes into bounded TX queue.
+ * Return 0 for local admission, -ENOTSUP if disabled, -ENOTCONN if unavailable,
+ * -EINVAL for invalid input, or queue/encoding errors. Does not create RF packets,
+ * publish MQTT, negotiate support or prove delivery; application owns correlation.
+ */
+int mc_local_extension_send(const uint8_t *payload, size_t length);
 
 #ifdef __cplusplus
 }

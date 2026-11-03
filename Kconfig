@@ -19,6 +19,16 @@ config MESHTASTIC_NODE_CACHE_SIZE
 
 if MESHTASTIC_CLIENT
 
+config MESHTASTIC_LOCAL_EXTENSION
+    bool "Private local UART extension (requires matching custom radio firmware)"
+    default n
+    help
+      Admit bounded opaque bytes on private experimental Protobuf field 99.
+      Not an official Meshtastic API and never a MeshPacket/LoRa transmission.
+      Application must negotiate support and retain data on timeout/refusal.
+      Adds 160 bytes RX scratch; no thread, periodic timer or board knowledge.
+      Leave disabled when using an unmodified radio image.
+
 config MESHTASTIC_TX_QUEUE_DEPTH
     int "Outstanding UART TX frames (including unreaped completions)"
     range 2 16

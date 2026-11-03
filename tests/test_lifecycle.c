@@ -108,8 +108,15 @@ void uart_irq_rx_disable(const struct device *d)
 static unsigned events;
 static unsigned pause_events, lost_events, received_events;
 static int pause_status;
+static unsigned extension_events;
+static uint8_t extension_payload[160];
 static void callback(const struct mc_event *e)
 {
+    if (e->type == MC_LOCAL_EXTENSION) {
+        assert(e->length <= sizeof(extension_payload));
+        memcpy(extension_payload, e->payload, e->length);
+        ++extension_events;
+    }
 	++events;
 	if (e->type == MC_PAUSED) {
 		++pause_events;
@@ -367,6 +374,30 @@ int main(void)
 	assert(!mc_resume());
 	mc_poll();
 	sync_node(0xabcdef);
+
+#if CONFIG_MESHTASTIC_LOCAL_EXTENSION
+    uint8_t local_bytes[] = {'R','B','V','1',1,2,3,4};
+    unsigned before_rx = received_events;
+    uint8_t extension_frame[200];
+    pb_ostream_t local_stream = pb_ostream_from_buffer(extension_frame + 4, sizeof(extension_frame) - 4);
+    assert(pb_encode_tag(&local_stream, PB_WT_STRING, 99));
+    assert(pb_encode_string(&local_stream, local_bytes, sizeof(local_bytes)));
+    extension_frame[0]=0x94; extension_frame[1]=0xc3;
+    extension_frame[2]=local_stream.bytes_written >> 8; extension_frame[3]=local_stream.bytes_written;
+    memcpy(input,extension_frame,local_stream.bytes_written+4);
+    in_pos=0; in_used=local_stream.bytes_written+4;
+    uart_callbacks[0](&test_radio,NULL); mc_poll();
+    assert(extension_events==1 && !memcmp(extension_payload,local_bytes,sizeof(local_bytes)));
+    assert(received_events==before_rx); /* Local extension is never an RF event. */
+    out_used=0;
+    assert(mc_local_extension_send(NULL,1)==-EINVAL);
+    assert(mc_local_extension_send(local_bytes,161)==-EINVAL);
+    assert(!mc_local_extension_send(local_bytes,sizeof(local_bytes)));
+    mc_poll();
+    assert(out_used >= 4 && output[0]==0x94 && output[1]==0xc3);
+#else
+    assert(mc_local_extension_send(NULL,0)==-ENOTSUP);
+#endif
 
 	/* Burst overflow is bounded and reported, never treated as valid snapshot. */
 	memset(input, 0, 5000);

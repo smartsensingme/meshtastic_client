@@ -40,6 +40,9 @@ static struct mc_frame frame;
 static meshtastic_FromRadio incoming;
 static meshtastic_ToRadio outgoing;
 static uint8_t tx[MC_FRAME_MAX];
+#if defined(CONFIG_MESHTASTIC_LOCAL_EXTENSION) && CONFIG_MESHTASTIC_LOCAL_EXTENSION
+static uint8_t extension_rx[160];
+#endif
 static atomic_t rx_fault;
 static atomic_t rx_bytes;
 static atomic_t rx_dropped;
@@ -391,6 +394,33 @@ static void process(void)
 	pb_istream_t stream = pb_istream_from_buffer(frame.data, frame.length);
 	incoming = (meshtastic_FromRadio)meshtastic_FromRadio_init_zero;
 	++rx_frames;
+#if defined(CONFIG_MESHTASTIC_LOCAL_EXTENSION) && CONFIG_MESHTASTIC_LOCAL_EXTENSION
+	/* A private extension-only frame cannot masquerade as a mesh receive event. */
+	pb_istream_t peek = pb_istream_from_buffer(frame.data, frame.length);
+	pb_wire_type_t wire;
+	uint32_t tag;
+	bool eof;
+	if (pb_decode_tag(&peek, &wire, &tag, &eof) && tag == 99) {
+		pb_istream_t field;
+		if (wire != PB_WT_STRING || !pb_make_string_substream(&peek, &field) ||
+		    !field.bytes_left || field.bytes_left > sizeof(extension_rx)) {
+			fault(-EBADMSG);
+			return;
+		}
+		size_t length = field.bytes_left;
+		if (!pb_read(&field, extension_rx, length) ||
+		    !pb_close_string_substream(&peek, &field) || peek.bytes_left) {
+			fault(-EBADMSG);
+			return;
+		}
+		last_rx = k_uptime_get();
+		diagnostic.last_rx_ms = last_rx;
+		struct mc_event extension = {
+			.type = MC_LOCAL_EXTENSION, .payload = extension_rx, .length = length};
+		event(&extension);
+		return;
+	}
+#endif
 	if (!pb_decode(&stream, meshtastic_FromRadio_fields, &incoming)) {
 		++rx_decode_errors;
 		RT_LOGW(LOG_TAG, "UART_DECODE_FAIL frame_bytes=%u reason=%s",
@@ -767,4 +797,27 @@ int mc_snapshot_read(struct mc_snapshot *snapshot)
 	snapshot->captured_at_ms = k_uptime_get();
 	snapshot->snapshot_completed_at_ms = snapshot_completed_at;
 	return 0;
+}
+
+/** Public owner API, no internal callers: encode opaque local bytes, enqueue copy. */
+int mc_local_extension_send(const uint8_t *payload, size_t length)
+{
+#if defined(CONFIG_MESHTASTIC_LOCAL_EXTENSION) && CONFIG_MESHTASTIC_LOCAL_EXTENSION
+	if (!ready || session_state != MC_SESSION_RUNNING) {
+		return -ENOTCONN;
+	}
+	if (!payload || !length || length > sizeof(extension_rx)) {
+		return -EINVAL;
+	}
+	pb_ostream_t stream = pb_ostream_from_buffer(tx, sizeof(tx));
+	if (!pb_encode_tag(&stream, PB_WT_STRING, 99) ||
+	    !pb_encode_string(&stream, payload, length)) {
+		return -EMSGSIZE;
+	}
+	return mc_tx_write(tx, stream.bytes_written, 0, false);
+#else
+	(void)payload;
+	(void)length;
+	return -ENOTSUP;
+#endif
 }

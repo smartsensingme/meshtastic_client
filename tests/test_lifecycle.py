@@ -25,6 +25,7 @@ settings = {
     "MESHTASTIC_REFRESH_INTERVAL_MS": 0,
     "MESHTASTIC_WANT_ACK": 1,
     "MESHTASTIC_HOP_LIMIT": 1,
+    "MESHTASTIC_LOCAL_EXTENSION": 0,
 }
 
 sources = [
@@ -38,6 +39,8 @@ sources = [
 ]
 import sys
 
+if "--local-extension" in sys.argv:
+    settings["MESHTASTIC_LOCAL_EXTENSION"] = 1
 if "--tx-depth=2" in sys.argv:
     settings["MESHTASTIC_TX_QUEUE_DEPTH"] = 2
 with tempfile.TemporaryDirectory(prefix="client-state-test-") as d:
